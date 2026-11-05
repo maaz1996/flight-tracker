@@ -1,0 +1,12 @@
+{
+  "origin": "BLR",
+  "destination": "DBG",
+  "returnOrigin": "PAT",
+  "returnDestination": "BLR",
+  "outboundStart": "2026-11-30",
+  "outboundEnd": "2026-12-13",
+  "returnStart": "2026-12-16",
+  "returnEnd": "2026-12-20",
+  "maxOutboundPrice": 7500,
+  "maxReturnPrice": 7500
+}
