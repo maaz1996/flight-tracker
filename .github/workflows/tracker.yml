@@ -2,8 +2,7 @@ name: Flight Price Tracker
 
 on:
   schedule:
-    # Runs automatically every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
-    - cron: '0 */6 * * *'
+    - cron: '0 8,20 * * *' # Runs twice a day (at 8 AM and 8 PM UTC)
   workflow_dispatch: # Allows you to manually trigger it anytime from the GitHub UI
 
 jobs:
