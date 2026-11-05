@@ -16,8 +16,8 @@ function getDatesInRange(startDate, endDate) {
     return dates;
 }
 
-async function fetchCheapestLeg(origin, dest, dates) {
-    let cheapest = { price: Infinity, date: '' };
+async function fetchAllLegPrices(origin, dest, dates) {
+    const legResults = [];
 
     for (const date of dates) {
         try {
@@ -41,16 +41,16 @@ async function fetchCheapestLeg(origin, dest, dates) {
 
             if (allFlights.length > 0) {
                 const lowest = Math.min(...allFlights.map(f => f.price));
-                if (lowest < cheapest.price) {
-                    cheapest.price = lowest;
-                    cheapest.date = date;
-                }
+                legResults.push({ date, price: lowest });
+            } else {
+                legResults.push({ date, price: null });
             }
         } catch (err) {
             console.error(`Error fetching ${origin}->${dest} on ${date}:`, err.message);
+            legResults.push({ date, price: null });
         }
     }
-    return cheapest;
+    return legResults;
 }
 
 async function checkFlexibleFlights() {
@@ -59,37 +59,31 @@ async function checkFlexibleFlights() {
     const outboundDates = getDatesInRange(config.outboundStart, config.outboundEnd);
     const returnDates = getDatesInRange(config.returnStart, config.returnEnd);
 
-    // Find cheapest outbound leg (BLR -> DBG)
-    const bestOutbound = await fetchCheapestLeg(config.origin, config.destination, outboundDates);
-    
-    // Find cheapest return leg (PAT -> BLR)
-    const bestReturn = await fetchCheapestLeg(config.returnOrigin, config.returnDestination, returnDates);
+    // Fetch prices for all dates in both ranges
+    const outboundResults = await fetchAllLegPrices(config.origin, config.destination, outboundDates);
+    const returnResults = await fetchAllLegPrices(config.returnOrigin, config.returnDestination, returnDates);
 
-    if (bestOutbound.price === Infinity || bestReturn.price === Infinity) {
-        console.log('Could not fetch valid fares for one or both legs.');
-        return;
-    }
+    // Build the Telegram message report
+    let message = `📊 **Flight Price Tracker Update**\n\n`;
 
-    const totalCost = bestOutbound.price + bestReturn.price;
-    console.log(`\n--- Current Best Found ---`);
-    console.log(`✈️ Outbound (${config.origin} ➔ ${config.destination} on ${bestOutbound.date}): ₹${bestOutbound.price} (Max target: ₹${config.maxOutboundPrice})`);
-    console.log(`✈️ Return (${config.returnOrigin} ➔ ${config.returnDestination} on ${bestReturn.date}): ₹${bestReturn.price} (Max target: ₹${config.maxReturnPrice})`);
-    console.log(`💰 Total Combined: ₹${totalCost}\n`);
+    message += `✈️ **Outbound (${config.origin} ➔ ${config.destination}):**\n`;
+    outboundResults.forEach(item => {
+        const status = item.price !== null ? `₹${item.price}` : `No flights / Error`;
+        const targetMark = (item.price !== null && item.price <= config.maxOutboundPrice) ? ' ✅' : '';
+        message.format ? '' : null;
+        message += `• ${item.date}: **${status}**${targetMark}\n`;
+    });
 
-    // Check if EITHER leg meets its separate target criteria
-    const outboundMet = bestOutbound.price <= config.maxOutboundPrice;
-    const returnMet = bestReturn.price <= config.maxReturnPrice;
+    message += `\n✈️ **Return (${config.returnOrigin} ➔ ${config.returnDestination}):**\n`;
+    returnResults.forEach(item => {
+        const status = item.price !== null ? `₹${item.price}` : `No flights / Error`;
+        const targetMark = (item.price !== null && item.price <= config.maxReturnPrice) ? ' ✅' : '';
+        message += `• ${item.date}: **${status}**${targetMark}\n`;
+    });
 
-    if (outboundMet || returnMet) {
-        const message = `🚨 **Flight Deal Alert (Target Met on at least one leg)!**\n\n` +
-            `✈️ **Outbound:** ${config.origin} ➔ ${config.destination} (${bestOutbound.date}) ➔ **₹${bestOutbound.price}** ${outboundMet ? '✅ (Target Met)' : '(Above Target)'}\n` +
-            `✈️ **Return:** ${config.returnOrigin} ➔ ${config.returnDestination} (${bestReturn.date}) ➔ **₹${bestReturn.price}** ${returnMet ? '✅ (Target Met)' : '(Above Target)'}\n` +
-            `💰 **Total Trip Cost:** ₹${totalCost}`;
+    message += `\n_Targets: Outbound ≤₹${config.maxOutboundPrice} | Return ≤₹${config.maxReturnPrice}_`;
 
-        await sendAlert(message);
-    } else {
-        console.log('Both legs are still above your individual target prices. No alert sent.');
-    }
+    await sendAlert(message);
 }
 
 async function sendAlert(message) {
@@ -101,7 +95,7 @@ async function sendAlert(message) {
         text: message,
         parse_mode: 'Markdown'
     });
-    console.log('Alert notification sent successfully!');
+    console.log('Full report notification sent to Telegram successfully!');
 }
 
 checkFlexibleFlights();
