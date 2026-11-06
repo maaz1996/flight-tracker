@@ -16,11 +16,30 @@ function getDatesInRange(startDate, endDate) {
     return dates;
 }
 
+async function checkApiCredits() {
+    try {
+        const response = await axios.get('https://serpapi.com/account', {
+            params: { api_key: process.env.SERPAPI_KEY }
+        });
+        const searchesRemaining = response.data.plan_searches_left;
+        console.log(`SerpApi credits remaining: ${searchesRemaining}`);
+        
+        if (searchesRemaining !== undefined && searchesRemaining <= 0) {
+            await sendAlert(`🚨 **WARNING: SerpApi Credits Exhausted!**\n\nYou have 0 searches left on your current SerpApi account. Please rotate your API key.`);
+            return false;
+        }
+    } catch (err) {
+        console.error('Could not check SerpApi account quota:', err.message);
+    }
+    return true;
+}
+
 async function fetchAllLegPrices(origin, dest, dates) {
     const legResults = [];
 
     for (const date of dates) {
         try {
+            // FIXED: Using actual SerpApi Google Flights endpoint
             const response = await axios.get('https://serpapi.com/search.json', {
                 params: {
                     engine: 'google_flights',
@@ -54,6 +73,10 @@ async function fetchAllLegPrices(origin, dest, dates) {
 }
 
 async function checkFlexibleFlights() {
+    console.log('Checking SerpApi credit status before running scan...');
+    const hasCredits = await checkApiCredits();
+    if (!hasCredits) return;
+
     console.log('Scanning flexible date windows for both legs...');
 
     const outboundDates = getDatesInRange(config.outboundStart, config.outboundEnd);
@@ -63,6 +86,13 @@ async function checkFlexibleFlights() {
     const outboundResults = await fetchAllLegPrices(config.origin, config.destination, outboundDates);
     const returnResults = await fetchAllLegPrices(config.returnOrigin, config.returnDestination, returnDates);
 
+    // PRINT OBJECTS TO THE RUNNER LOGS FOR DEBUGGING
+    console.log('--- OUTBOUND RESULTS OBJECT ---');
+    console.log(JSON.stringify(outboundResults, null, 2));
+
+    console.log('--- RETURN RESULTS OBJECT ---');
+    console.log(JSON.stringify(returnResults, null, 2));
+
     // Build the Telegram message report
     let message = `📊 **Flight Price Tracker Update**\n\n`;
 
@@ -70,7 +100,6 @@ async function checkFlexibleFlights() {
     outboundResults.forEach(item => {
         const status = item.price !== null ? `₹${item.price}` : `No flights / Error`;
         const targetMark = (item.price !== null && item.price <= config.maxOutboundPrice) ? ' ✅' : '';
-        message.format ? '' : null;
         message += `• ${item.date}: **${status}**${targetMark}\n`;
     });
 
@@ -95,7 +124,7 @@ async function sendAlert(message) {
         text: message,
         parse_mode: 'Markdown'
     });
-    console.log('Full report notification sent to Telegram successfully!');
+    console.log('Telegram notification sent successfully!');
 }
 
 checkFlexibleFlights();
